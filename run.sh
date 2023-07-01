@@ -9,4 +9,4 @@ python track_detection.py --source=video/video8.mp4 --conf=0.5 --no-show --no-st
 python track_detection.py --source=video/video9.mp4 --conf=0.5 --no-show --no-stream 
 python track_detection.py --source=video/video10.mp4 --conf=0.5 --no-show --no-stream 
 python track_detection.py --source=video/video11.mp4 --conf=0.5 --no-show --no-stream 
-python track_detection.py --source=video/video12.mp4 --conf=0.5 --no-show --no-stream 
+python track_detection.py --source=video/video12.mp4 --conf=0.5 --no-show --no-stream  

@@ -7,6 +7,7 @@ import supervision as sv
 import numpy as np
 from ultralytics.yolo.utils.plotting import Annotator
 import os
+import json
 
 OUTPUT_FOLDER = 'output'
 # SOURCE = 'video/raw-los-angeles-streets-episode-2.mp4'
@@ -19,6 +20,7 @@ HUMAN_STATUS = {'SAFE': {'Description': 'SAFE', 'Color': (43, 153, 18)},
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description='fall-detection')
     parser.add_argument('--bed-location', default=[], nargs='+', type=int)
+    # parser.add_argument('--bed-location', default='', type=str)
     parser.add_argument('--source', default='0', type=str)
     parser.add_argument('--model', default='yolov8n-pose.pt', nargs=1, type=str)
     parser.add_argument('--verbose', default=True,action=argparse.BooleanOptionalAction)
@@ -38,8 +40,8 @@ def inside_rectangle(point_xy, rectangle_box: list):
 
 def human_status(rectangle_box: list, keypoints, beds):
     for bed in beds:
-        # print(keypoints[11], keypoints[12], bed)
-        if inside_rectangle(keypoints[11], bed) and inside_rectangle(keypoints[12], bed):
+        bed_ctr = np.array(bed).reshape((-1,1,2)).astype(np.int32)
+        if cv2.pointPolygonTest(bed_ctr, keypoints[11].tolist(), False) >= 0 and cv2.pointPolygonTest(bed_ctr, keypoints[12].tolist(), False) >= 0:
             return 'onBED'
     px1, py1, px2, py2 = rectangle_box
     if (px2 - px1) > (py2 - py1):
@@ -56,7 +58,15 @@ def main():
     video = cv2.VideoCapture(args.source)
 
     if args.bed_location != []:
-        beds.append(args.bed_location)
+        bed_contour = []
+        temp = []
+        for i, n in enumerate(args.bed_location):
+            temp.append(args.bed_location[i])
+            if len(temp) == 2:
+                bed_contour.append(temp)
+                temp = []
+        print(bed_contour)
+        beds.append(bed_contour)
 
     isExist = os.path.exists(OUTPUT_FOLDER)
     if not isExist:
@@ -72,9 +82,6 @@ def main():
     video_result = cv2.VideoWriter(output_name,
                                    cv2.VideoWriter_fourcc(*'MJPG'),
                                    fps, size)
-
-    # cv2.namedWindow('yolov8', 0)
-    # cv2.resizeWindow('yolov8', 900, 900)
     video.release()
 
     cv2.namedWindow('yolov8', 0)
@@ -91,8 +98,10 @@ def main():
         annotator = Annotator(frame, font_size=2, line_width=2)
 
         for bed in beds:
-            annotator.box_label(bed, 'BED', color=(
-                86, 168, 227), txt_color=(255, 255, 255))
+            red_color = (0, 0, 255) # BGR
+            cv2.polylines(frame, pts=[np.array(bed, np.int32)], isClosed=True, color=red_color, thickness=3)
+            # annotator.box_label(bed, 'BED', color=(
+            #     86, 168, 227), txt_color=(255, 255, 255))
 
         for i, r in enumerate(result):
             boxes = r.boxes
