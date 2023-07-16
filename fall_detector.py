@@ -37,15 +37,15 @@ def parse_args():
     parser.add_argument(
         "--video",
         help="video file/url",
-        default="testing_video/tong-shen-duan-huo-guo-gao-hua-zhi-xiu-fu-chia-hangs-falling-hd-remastered-video.mp4",
+        default="dataset/UR Fall Detection Dataset/adl/adl-01-cam0.mp4",
     )
     parser.add_argument(
-        "--out_filename", help="output filename", default="demo/sample_out.mp4"
+        "--out_filename", help="output filename", default="output/sample_out.mp4"
     )
     parser.add_argument(
         "--config",
         default=(
-            "configs/skeleton/stgcnpp/stgcnpp_8xb16-joint-u100-80e_ntu60-xsub-keypoint-2d.py"
+            "mmlab/configs/skeleton/stgcnpp/stgcnpp_8xb16-joint-u100-80e_ntu60-xsub-keypoint-2d.py"
         ),
         help="skeleton model config file path",
     )
@@ -58,7 +58,7 @@ def parse_args():
     )
     parser.add_argument(
         "--det-config",
-        default="demo/demo_configs/faster-rcnn_r50_fpn_2x_coco_infer.py",
+        default="mmlab/external_config/faster-rcnn_r50_fpn_2x_coco_infer.py",
         help="human detection config file path (from mmdet)",
     )
     parser.add_argument(
@@ -82,7 +82,7 @@ def parse_args():
     )
     parser.add_argument(
         "--pose-config",
-        default="demo/demo_configs/" "td-hm_hrnet-w32_8xb64-210e_coco-256x192_infer.py",
+        default="/Users/eltonli/code/Fall-Detection/mmlab/external_config/td-hm_hrnet-w32_8xb64-210e_coco-256x192_infer.py",
         help="human pose estimation config file path (from mmpose)",
     )
     parser.add_argument(
@@ -287,6 +287,184 @@ def split_person(ipt_list):
     return persons
 
 
+def inference(
+    video,
+    out_filename,
+    config="mmlab/configs/skeleton/stgcnpp/stgcnpp_8xb16-joint-u100-80e_ntu60-xsub-keypoint-2d.py",
+    checkpoint="https://download.openmmlab.com/mmaction/v1.0/skeleton/stgcnpp/stgcnpp_8xb16-joint-u100-80e_ntu60-xsub-keypoint-2d/stgcnpp_8xb16-joint-u100-80e_ntu60-xsub-keypoint-2d_20221228-86e1e77a.pth",
+    det_config="mmlab/external_config/faster-rcnn_r50_fpn_2x_coco_infer.py",
+    det_checkpoint="http://download.openmmlab.com/mmdetection/v2.0/faster_rcnn/faster_rcnn_r50_fpn_2x_coco/faster_rcnn_r50_fpn_2x_coco_bbox_mAP-0.384_20200504_210434-a5d8aa15.pth",
+    pose_config="mmlab/external_config/td-hm_hrnet-w32_8xb64-210e_coco-256x192_infer.py",
+    pose_checkpoint="https://download.openmmlab.com/mmpose/top_down/hrnet/hrnet_w32_coco_256x192-c78dce93_20200708.pth",
+    label_map="tools/data/skeleton/label_map_ntu60.txt",
+    device="cuda:0",
+    det_cat_id=0, # human id is 0
+    short_side=480,
+    predict_stepsize=4, # make clip for every n frame
+    output_stepsize=1, #show one frame per n frames
+    clip_len=16, # clip length for skeleton detection
+    frame_interval=2, # the interval within the clip
+    det_score_thr=0.3, # human detection threshold
+    fall_thr=0.3, # fall threshold
+):
+    tmp_dir = tempfile.TemporaryDirectory()
+    frame_paths, frames = frame_extract(video, short_side, tmp_dir.name)
+
+    num_frame = len(frame_paths)
+    h, w, _ = frames[0].shape
+
+    # Get Human detection results.
+    det_results, _ = detection_inference(
+        det_config,
+        det_checkpoint,
+        frame_paths,
+        det_score_thr,
+        det_cat_id,
+        device,
+    )
+    torch.cuda.empty_cache()
+    # det_results = [np.delete(x, np.s_[1:], axis=0) for x in det_results]
+    # Get Pose estimation results.
+    # split_det_results = split_person(det_results)
+    # for person in split_det_results:
+    pose_results, pose_data_samples = pose_inference(
+        pose_config, pose_checkpoint, frame_paths, det_results, device
+    )
+    torch.cuda.empty_cache()
+
+    fake_anno = dict(
+        frame_dir="",
+        label=-1,
+        img_shape=(h, w),
+        original_shape=(h, w),
+        start_index=0,
+        modality="Pose",
+        total_frames=num_frame,
+    )
+    num_person = max([len(x["keypoints"]) for x in pose_results])
+
+    num_keypoint = 17
+    keypoint = np.zeros((num_frame, num_person, num_keypoint, 2), dtype=np.float16)
+    keypoint_score = np.zeros((num_frame, num_person, num_keypoint), dtype=np.float16)
+    for i, poses in enumerate(pose_results):
+        poses["keypoints"] = np.append(
+            poses["keypoints"],
+            np.zeros(
+                (num_person - len(poses["keypoints"]), num_keypoint, 2),
+                dtype=np.float32,
+            ),
+            axis=0,
+        )
+        poses["keypoint_scores"] = np.append(
+            poses["keypoint_scores"],
+            np.zeros(
+                (num_person - len(poses["keypoint_scores"]), num_keypoint),
+                dtype=np.float32,
+            ),
+            axis=0,
+        )
+
+        keypoint[i] = poses["keypoints"]
+        keypoint_score[i] = poses["keypoint_scores"]
+
+    config = mmengine.Config.fromfile(config)
+
+    model = init_recognizer(config, checkpoint, device)
+
+    clip_len, frame_interval = clip_len, frame_interval
+    window_size = clip_len * frame_interval
+    assert clip_len % 2 == 0, "We would like to have an even clip_len"
+    # Note that it's 1 based here
+    timestamps = np.arange(
+        window_size // 2, num_frame + 1 - window_size // 2, predict_stepsize
+    )
+    test = [i for i in range(1, num_frame)]
+    predictions = []
+    print("Performing SpatioTemporal Action Detection for each clip")
+    prog_bar = mmengine.ProgressBar(len(timestamps))
+    for timestamp, proposal in zip(timestamps, det_results):
+        start_frame = timestamp - (clip_len // 2 - 1) * frame_interval
+        frame_inds = start_frame + np.arange(0, window_size, frame_interval)
+        frame_inds = list(frame_inds - 1)
+
+        print(frame_inds)
+        kp = keypoint[frame_inds].transpose((1, 0, 2, 3))
+        kps = keypoint_score[frame_inds].transpose((1, 0, 2))
+
+        with torch.no_grad():
+            prediction = []
+            if len(kp) == 0:
+                prediction.append([])
+            else:
+                for i in range(len(kp)):
+                    prediction.append([])
+                    fake_anno = dict(
+                        frame_dir="",
+                        label=-1,
+                        img_shape=(h, w),
+                        original_shape=(h, w),
+                        start_index=0,
+                        modality="Pose",
+                        total_frames=len(frame_inds),
+                        keypoint=kp[i : i + 1],
+                        keypoint_score=kps[i : i + 1],
+                    )
+
+                    result = inference_recognizer(model, fake_anno)
+                    label_map = [x.strip() for x in open(label_map).readlines()]
+                    prediction[i].append(
+                        (label_map[42], result.pred_scores.item[42].item())
+                    )
+
+            predictions.append(prediction)
+        prog_bar.update()
+    pass
+
+    results = []
+    center_human_detection = [det_results[ind - 1] for ind in timestamps]
+    for human_detection, prediction in zip(center_human_detection, predictions):
+        results.append(pack_result(human_detection, prediction, h, w))
+
+    def dense_timestamps(timestamps, n):
+        """Make it nx frames."""
+        old_frame_interval = timestamps[1] - timestamps[0]
+        start = timestamps[0] - old_frame_interval / n * (n - 1) / 2
+        new_frame_inds = np.arange(len(timestamps) * n) * old_frame_interval / n + start
+        return new_frame_inds.astype(np.int64)
+
+    dense_n = int(predict_stepsize / output_stepsize)
+    frames = [
+        cv2.imread(frame_paths[i - 1]) for i in dense_timestamps(timestamps, dense_n)
+    ]
+
+    def fall_exist(ipt_result):
+        if len(ipt_result) == 0:
+            return -1
+        for person in ipt_result:
+            if person[2][0] >= fall_thr:
+                return 1
+
+        return 0
+
+    frame_result = [fall_exist(x) for x in results]
+    ration = len(frames) / len(results)
+    full_fall_result = []
+    for p in frame_result:
+        for q in range(int(ration)):
+            full_fall_result.append(p)
+    print("Performing visualization")
+    vis_frames = visualize(frames, results, thr=fall_thr)
+    vid = mpy.ImageSequenceClip(
+        [x[:, :, ::-1] for x in vis_frames],
+        fps=cv2.VideoCapture(video).get(cv2.CAP_PROP_FPS),
+    )
+    vid.write_videofile(out_filename)
+
+    tmp_dir.cleanup()
+
+    return full_fall_result
+
+
 def main():
     args = parse_args()
 
@@ -349,23 +527,11 @@ def main():
 
         keypoint[i] = poses["keypoints"]
         keypoint_score[i] = poses["keypoint_scores"]
-    # keypoint = np.delete(keypoint, np.s_[1:], axis=1)
-    # keypoint_score = np.delete(keypoint_score, np.s_[1:], axis=1)
-    # fake_anno["keypoint"] = keypoint.transpose((1, 0, 2, 3))
-    # fake_anno["keypoint_score"] = keypoint_score.transpose((1, 0, 2))
 
     config = mmengine.Config.fromfile(args.config)
     config.merge_from_dict(args.cfg_options)
 
     model = init_recognizer(config, args.checkpoint, args.device)
-
-    # -----------------
-    # SAMPLER = {
-    #     "type": "SampleAVAFrames",
-    #     "clip_len": 8,
-    #     "frame_interval": 8,
-    #     "test_mode": True,
-    # }
 
     clip_len, frame_interval = SAMPLER["clip_len"], SAMPLER["frame_interval"]
     window_size = clip_len * frame_interval
@@ -379,18 +545,10 @@ def main():
     print("Performing SpatioTemporal Action Detection for each clip")
     prog_bar = mmengine.ProgressBar(len(timestamps))
     for timestamp, proposal in zip(timestamps, det_results):
-        # if proposal.shape[0] == 0:
-        #     predictions.append(None)
-        #     prog_bar.update()
-        #     continue
-        # print(timestamp)
         start_frame = timestamp - (clip_len // 2 - 1) * frame_interval
         frame_inds = start_frame + np.arange(0, window_size, frame_interval)
         frame_inds = list(frame_inds - 1)
-        # print(frame_inds)
 
-        # for each person
-        # Change fake_anno
         print(frame_inds)
         kp = keypoint[frame_inds].transpose((1, 0, 2, 3))
         kps = keypoint_score[frame_inds].transpose((1, 0, 2))
@@ -440,6 +598,7 @@ def main():
     frames = [
         cv2.imread(frame_paths[i - 1]) for i in dense_timestamps(timestamps, dense_n)
     ]
+
     def fall_exist(ipt_result):
         if len(ipt_result) == 0:
             return -1
@@ -448,8 +607,9 @@ def main():
                 return 1
 
         return 0
+
     frame_result = [fall_exist(x) for x in results]
-    ration = len(frames)/len(results)
+    ration = len(frames) / len(results)
     full_fall_result = []
     for p in frame_result:
         for q in range(int(ration)):
@@ -457,17 +617,15 @@ def main():
     print("Performing visualization")
     vis_frames = visualize(frames, results, thr=args.fall_thr)
     vid = mpy.ImageSequenceClip(
-        [x[:, :, ::-1] for x in vis_frames], fps=cv2.VideoCapture(args.video).get(cv2.CAP_PROP_FPS)
+        [x[:, :, ::-1] for x in vis_frames],
+        fps=cv2.VideoCapture(args.video).get(cv2.CAP_PROP_FPS),
     )
     vid.write_videofile(args.out_filename)
-
 
     tmp_dir.cleanup()
 
     return full_fall_result
-    
 
 
 if __name__ == "__main__":
     main()
- 
