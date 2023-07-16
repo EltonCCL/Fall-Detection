@@ -246,7 +246,6 @@ def visualize(frames, annotations, plate=plate_green, max_num=5, thr=0.3):
                 box = (box * scale_ratio).astype(np.int64)
                 st, ed = tuple(box[:2]), tuple(box[2:])
                 if score[0] >= thr:
-                    print(i)
                     cv2.rectangle(frame, st, ed, (102, 0, 255), 2)
                 else:
                     cv2.rectangle(frame, st, ed, plate[0], 2)
