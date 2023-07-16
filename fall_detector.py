@@ -37,31 +37,22 @@ def parse_args():
     parser.add_argument(
         "--video",
         help="video file/url",
-        default="testing_video/Untitled video - Made with Clipchamp.mp4",
+        default="testing_video/tong-shen-duan-huo-guo-gao-hua-zhi-xiu-fu-chia-hangs-falling-hd-remastered-video.mp4",
     )
     parser.add_argument(
-        "--out_filename", help="output filename", default="demo/default_out.mp4"
+        "--out_filename", help="output filename", default="demo/sample_out.mp4"
     )
     parser.add_argument(
         "--config",
-        # default=(
-        #     "configs/skeleton/posec3d/"
-        #     "slowonly_r50_8xb16-u48-240e_ntu60-xsub-keypoint.py"
-        # ),
         default=(
-            "configs/skeleton/stgcn/stgcn_8xb16-joint-u100-80e_ntu60-xsub-keypoint-2d.py"
+            "configs/skeleton/stgcnpp/stgcnpp_8xb16-joint-u100-80e_ntu60-xsub-keypoint-2d.py"
         ),
         help="skeleton model config file path",
     )
     parser.add_argument(
         "--checkpoint",
-        # default=(
-        #     "https://download.openmmlab.com/mmaction/skeleton/posec3d/"
-        #     "slowonly_r50_u48_240e_ntu60_xsub_keypoint/"
-        #     "slowonly_r50_u48_240e_ntu60_xsub_keypoint-f3adabf1.pth"
-        # ),
         default=(
-            "https://download.openmmlab.com/mmaction/v1.0/skeleton/stgcn/stgcn_8xb16-joint-u100-80e_ntu60-xsub-keypoint-2d/stgcn_8xb16-joint-u100-80e_ntu60-xsub-keypoint-2d_20221129-484a394a.pth"
+            "https://download.openmmlab.com/mmaction/v1.0/skeleton/stgcnpp/stgcnpp_8xb16-joint-u100-80e_ntu60-xsub-keypoint-2d/stgcnpp_8xb16-joint-u100-80e_ntu60-xsub-keypoint-2d_20221228-86e1e77a.pth"
         ),
         help="skeleton model checkpoint file/url",
     )
@@ -83,7 +74,7 @@ def parse_args():
     parser.add_argument(
         "--det-score-thr",
         type=float,
-        default=0.9,
+        default=0.3,
         help="the threshold of human detection score",
     )
     parser.add_argument(
@@ -133,21 +124,27 @@ def parse_args():
     )
     parser.add_argument(
         "--output-stepsize",
-        default=2,
+        default=1,
         type=int,
         help=(
             "show one frame per n frames in the demo, we should have: "
             "predict_stepsize % output_stepsize == 0"
         ),
     )
-    parser.add_argument(
-        "--output-fps", default=6, type=int, help="the fps of demo video output"
-    )
+    # parser.add_argument(
+    #     "--output-fps", default=15, type=int, help="the fps of demo video output"
+    # )
     parser.add_argument(
         "--action-score-thr",
         type=float,
         default=0.1,
         help="the threshold of human action score",
+    )
+    parser.add_argument(
+        "--fall-thr",
+        type=float,
+        default=0.3,
+        help="the threshold of fall detection",
     )
     args = parser.parse_args()
     return args
@@ -156,7 +153,7 @@ def parse_args():
 SAMPLER = {
     "type": "SampleAVAFrames",
     "clip_len": 16,
-    "frame_interval": 1,
+    "frame_interval": 2,
     "test_mode": True,
 }
 
@@ -210,7 +207,7 @@ plate_green = plate_green.split("-")
 plate_green = [hex2color(h) for h in plate_green]
 
 
-def visualize(frames, annotations, plate=plate_green, max_num=5):
+def visualize(frames, annotations, plate=plate_green, max_num=5, thr=0.3):
     """Visualize frames with predicted annotations.
 
     Args:
@@ -248,7 +245,8 @@ def visualize(frames, annotations, plate=plate_green, max_num=5):
                 score = ann[2]
                 box = (box * scale_ratio).astype(np.int64)
                 st, ed = tuple(box[:2]), tuple(box[2:])
-                if score[0] >= 0.3:
+                if score[0] >= thr:
+                    print(i)
                     cv2.rectangle(frame, st, ed, (102, 0, 255), 2)
                 else:
                     cv2.rectangle(frame, st, ed, plate[0], 2)
@@ -394,7 +392,7 @@ def main():
 
         # for each person
         # Change fake_anno
-
+        print(frame_inds)
         kp = keypoint[frame_inds].transpose((1, 0, 2, 3))
         kps = keypoint_score[frame_inds].transpose((1, 0, 2))
 
@@ -417,19 +415,11 @@ def main():
                         keypoint_score=kps[i : i + 1],
                     )
 
-                    # fake_anno['total_frames'] = len(frame_inds)
-                    # fake_anno["keypoint"] = keypoint[frame_inds].transpose((1, 0, 2, 3))
-                    # fake_anno["keypoint_score"] = keypoint_score[frame_inds].transpose((1, 0, 2))
-
                     result = inference_recognizer(model, fake_anno)
                     label_map = [x.strip() for x in open(args.label_map).readlines()]
                     prediction[i].append(
                         (label_map[42], result.pred_scores.item[42].item())
                     )
-
-                    # for p, n in enumerate(result.pred_scores.item):
-                    #     if n > args.action_score_thr:
-                    #         prediction[i].append((label_map[p], n.item()))
 
             predictions.append(prediction)
         prog_bar.update()
@@ -451,24 +441,34 @@ def main():
     frames = [
         cv2.imread(frame_paths[i - 1]) for i in dense_timestamps(timestamps, dense_n)
     ]
+    def fall_exist(ipt_result):
+        if len(ipt_result) == 0:
+            return -1
+        for person in ipt_result:
+            if person[2][0] >= args.fall_thr:
+                return 1
 
+        return 0
+    frame_result = [fall_exist(x) for x in results]
+    ration = len(frames)/len(results)
+    full_fall_result = []
+    for p in frame_result:
+        for q in range(int(ration)):
+            full_fall_result.append(p)
     print("Performing visualization")
-    vis_frames = visualize(frames, results)
+    vis_frames = visualize(frames, results, thr=args.fall_thr)
     vid = mpy.ImageSequenceClip(
-        [x[:, :, ::-1] for x in vis_frames], fps=args.output_fps
+        [x[:, :, ::-1] for x in vis_frames], fps=cv2.VideoCapture(args.video).get(cv2.CAP_PROP_FPS)
     )
     vid.write_videofile(args.out_filename)
-    # -----------------
-    # result = inference_recognizer(model, fake_anno)
 
-    # max_pred_index = result.pred_scores.item.argmax().item()
-    # label_map = [x.strip() for x in open(args.label_map).readlines()]
-    # action_label = label_map[max_pred_index]
-
-    # visualize(args, frames, pose_data_samples, action_label)
 
     tmp_dir.cleanup()
+
+    return full_fall_result
+    
 
 
 if __name__ == "__main__":
     main()
+ 
