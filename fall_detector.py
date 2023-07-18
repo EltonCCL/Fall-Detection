@@ -290,21 +290,23 @@ def split_person(ipt_list):
 def inference(
     video,
     out_filename,
-    config="mmlab/configs/skeleton/stgcnpp/stgcnpp_8xb16-joint-u100-80e_ntu60-xsub-keypoint-2d.py",
-    checkpoint="https://download.openmmlab.com/mmaction/v1.0/skeleton/stgcnpp/stgcnpp_8xb16-joint-u100-80e_ntu60-xsub-keypoint-2d/stgcnpp_8xb16-joint-u100-80e_ntu60-xsub-keypoint-2d_20221228-86e1e77a.pth",
+    # config="mmlab/configs/skeleton/stgcnpp/stgcnpp_8xb16-joint-u100-80e_ntu60-xsub-keypoint-2d.py",
+    # checkpoint="https://download.openmmlab.com/mmaction/v1.0/skeleton/stgcnpp/stgcnpp_8xb16-joint-u100-80e_ntu60-xsub-keypoint-2d/stgcnpp_8xb16-joint-u100-80e_ntu60-xsub-keypoint-2d_20221228-86e1e77a.pth",
+    config="mmlab/configs/skeleton/stgcn/stgcn_8xb16-joint-u100-80e_ntu60-xsub-keypoint-2d.py",
+    checkpoint="https://download.openmmlab.com/mmaction/v1.0/skeleton/stgcn/stgcn_8xb16-joint-u100-80e_ntu60-xsub-keypoint-2d/stgcn_8xb16-joint-u100-80e_ntu60-xsub-keypoint-2d_20221129-484a394a.pth",
     det_config="mmlab/external_config/faster-rcnn_r50_fpn_2x_coco_infer.py",
     det_checkpoint="http://download.openmmlab.com/mmdetection/v2.0/faster_rcnn/faster_rcnn_r50_fpn_2x_coco/faster_rcnn_r50_fpn_2x_coco_bbox_mAP-0.384_20200504_210434-a5d8aa15.pth",
     pose_config="mmlab/external_config/td-hm_hrnet-w32_8xb64-210e_coco-256x192_infer.py",
     pose_checkpoint="https://download.openmmlab.com/mmpose/top_down/hrnet/hrnet_w32_coco_256x192-c78dce93_20200708.pth",
-    label_map="tools/data/skeleton/label_map_ntu60.txt",
+    label_map_path="tools/data/skeleton/label_map_ntu60.txt",
     device="cuda:0",
     det_cat_id=0, # human id is 0
     short_side=480,
     predict_stepsize=4, # make clip for every n frame
     output_stepsize=1, #show one frame per n frames
     clip_len=16, # clip length for skeleton detection
-    frame_interval=2, # the interval within the clip
-    det_score_thr=0.3, # human detection threshold
+    frame_interval=1, # the interval within the clip
+    det_score_thr=0.5, # human detection threshold
     fall_thr=0.3, # fall threshold
 ):
     tmp_dir = tempfile.TemporaryDirectory()
@@ -387,7 +389,6 @@ def inference(
         frame_inds = start_frame + np.arange(0, window_size, frame_interval)
         frame_inds = list(frame_inds - 1)
 
-        print(frame_inds)
         kp = keypoint[frame_inds].transpose((1, 0, 2, 3))
         kps = keypoint_score[frame_inds].transpose((1, 0, 2))
 
@@ -411,7 +412,7 @@ def inference(
                     )
 
                     result = inference_recognizer(model, fake_anno)
-                    label_map = [x.strip() for x in open(label_map).readlines()]
+                    label_map = [x.strip() for x in open(label_map_path).readlines()]
                     prediction[i].append(
                         (label_map[42], result.pred_scores.item[42].item())
                     )
@@ -458,7 +459,10 @@ def inference(
         [x[:, :, ::-1] for x in vis_frames],
         fps=cv2.VideoCapture(video).get(cv2.CAP_PROP_FPS),
     )
-    vid.write_videofile(out_filename)
+    if video.split('.')[-1] == 'avi':
+        vid.write_videofile(out_filename, codec='rawvideo')
+    else:
+        vid.write_videofile(out_filename)
 
     tmp_dir.cleanup()
 
@@ -549,7 +553,6 @@ def main():
         frame_inds = start_frame + np.arange(0, window_size, frame_interval)
         frame_inds = list(frame_inds - 1)
 
-        print(frame_inds)
         kp = keypoint[frame_inds].transpose((1, 0, 2, 3))
         kps = keypoint_score[frame_inds].transpose((1, 0, 2))
 
