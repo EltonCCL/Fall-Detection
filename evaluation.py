@@ -1,16 +1,26 @@
 import json
 from pathlib import Path
 import interval
+import os
 
 OUTPUTDIR = 'stat_result'
 
-UR_FALL_INFERENCE = "inference_result_plusplus/UR_FALL.json"
+SOURCE_DIR = 'inference_result_plusplus'
+
+UR_FALL_INFERENCE = f"{SOURCE_DIR}/UR_FALL.json"
 # MULTI_CAM_INFERENCE = "inference_result/multi_cam.json"
-LE2I_INFERENCE = "inference_result_plusplus/le2i.json"
+LE2I_INFERENCE = f"{SOURCE_DIR}/le2i.json"
 
 MULTI_CAM_GROUND = "dataset/Multicam/ground_truth.json"
 LE2I_HOME_GROUND = "dataset/Le2i_Fall_Detection_Dataset/home/Annotation_files"
 LE2I_COFFEE_GROUND = "dataset/Le2i_Fall_Detection_Dataset/Coffee_room/Annotation_files"
+
+
+isExist = os.path.exists(OUTPUTDIR)
+if not isExist:
+
+   # Create a new directory because it does not exist
+   os.makedirs(OUTPUTDIR)
 
 def read_first_two_line(file_path):
     file1 = open(file_path, 'r')
