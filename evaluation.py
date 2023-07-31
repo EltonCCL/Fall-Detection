@@ -5,20 +5,19 @@ import os
 
 OUTPUTDIR = 'stat_result'
 
-SOURCE_DIR = 'inference_result_plusplus'
+SOURCE_DIR = 'inference_result_pose3d'
 
 UR_FALL_INFERENCE = f"{SOURCE_DIR}/UR_FALL.json"
-# MULTI_CAM_INFERENCE = "inference_result/multi_cam.json"
 LE2I_INFERENCE = f"{SOURCE_DIR}/le2i.json"
+# MULTI_CAM_INFERENCE = "inference_result/multi_cam.json"
 
 MULTI_CAM_GROUND = "dataset/Multicam/ground_truth.json"
 LE2I_HOME_GROUND = "dataset/Le2i_Fall_Detection_Dataset/home/Annotation_files"
-LE2I_COFFEE_GROUND = "dataset/Le2i_Fall_Detection_Dataset/Coffee_room/Annotation_files"
+LE2I_COFFEE_GROUND = "dataset/Le2i_Fall_Detection_Dataset/coffee_room/Annotation_files"
 
 
 isExist = os.path.exists(OUTPUTDIR)
 if not isExist:
-
    # Create a new directory because it does not exist
    os.makedirs(OUTPUTDIR)
 
@@ -90,55 +89,58 @@ class ModelResult:
         return return_result
 
 
-def le2i():
+def le2i(src, opt):
     result = ModelResult()
 
-    file = open(LE2I_INFERENCE)
+    file = open(f"{src}/le2i.json")
     inference_result = json.load(file)
     file.close()
 
     count = 0
+    # for video in inference_result['coffee_room']:
     for video in inference_result['coffee_room']:
         for id in video:
             file_path = f'{LE2I_COFFEE_GROUND}/{id}'
-            file_path = file_path.replace('.avi', '.txt')
+            file_path = file_path.replace('.mp4', '.txt')
             if read_first_two_line(file_path) == 1:
                 if 1 in video[id]:
                     # Fall in the video and the model output as yes
-                    result.add_tp(id)
+                    result.add_tp(f"coffee_room/{id}")
                 else:
                     # Fall in the video and the model output as no
-                    result.add_fn(id)
+                    result.add_fn(f"coffee_room/{id}")
             else:
                 if 1 in video[id]:
                     # Fall not in the video and the model output as yes
-                    result.add_fp(id)
+                    result.add_fp(f"coffee_room/{id}")
                 else:
                     # Fall not in the video and the model output as no
-                    result.add_tn(id)
+                    result.add_tn(f"coffee_room/{id}")
 
     for video in inference_result['home']:
         for id in video:
             file_path = f'{LE2I_HOME_GROUND}/{id}'
-            file_path = file_path.replace('.avi', '.txt')
+            file_path = file_path.replace('.mp4', '.txt')
             if read_first_two_line(file_path) == 1:
                 if 1 in video[id]:
                     # Fall in the video and the model output as yes
-                    result.add_tp(id)
+                    result.add_tp(f"home/{id}")
                 else:
                     # Fall in the video and the model output as no
-                    result.add_fn(id)
+                    result.add_fn(f"home/{id}")
             else:
                 if 1 in video[id]:
                     # Fall not in the video and the model output as yes
-                    result.add_fp(id)
+                    result.add_fp(f"home/{id}")
                 else:
                     # Fall not in the video and the model output as no
-                    result.add_tn(id)
+                    result.add_tn(f"home/{id}")
     stat_data = result.get_dict()
     print(stat_data["score"])
-    with open(f"{OUTPUTDIR}/LE2I_EVAL.json", "w") as outfile:
-        json.dump(stat_data, outfile)
+
+    Path(opt).mkdir(parents=True, exist_ok=True)
+    with open(f"{opt}/LE2I_EVAL.json", "w") as outfile:
+        json.dump(stat_data, outfile, indent=4)
 
 def get_sequence(ipt_list: list) -> list:
     result = ModelResult()
@@ -164,6 +166,63 @@ def get_sequence(ipt_list: list) -> list:
             else:
                 # Fall not in the video and the model output as no
                 result.add_tn(id)
+
+
+def ur_fall(src, opt):
+    result = ModelResult()
+
+    file = open(f"{src}/UR_FALL.json")
+    inference_result = json.load(file)
+    file.close()
+
+    for video in inference_result['fall']:
+        for id in video:
+            if 1 in video[id]:
+                # Fall in the video and the model output as yes
+                result.add_tp(id)
+            else:
+                # Fall in the video and the model output as no
+                result.add_fn(id)
+
+    for video in inference_result['adl']:
+        for id in video:
+            if 1 in video[id]:
+                # Fall not in the video and the model output as yes
+                result.add_fp(id)
+            else:
+                # Fall not in the video and the model output as no
+                result.add_tn(id)
+
+
+    stat_data = result.get_dict()
+    print(stat_data["score"])
+
+    Path(opt).mkdir(parents=True, exist_ok=True)
+    with open(f"{opt}/UR_FALL_EVAL.json", "w") as outfile:
+        json.dump(stat_data, outfile, indent=4)
+
+
+def main():
+    print("** ST-GCN **")
+    # ur_fall("inference_result_stgcn", "stat_result/stgcn")
+    le2i("inference_result_stgcn", "stat_result/stgcn")
+
+    print("** AGCN **")
+    # ur_fall("inference_result_AGCN", "stat_result/AGCN")
+    le2i("inference_result_AGCN", "stat_result/AGCN")
+
+    print("** Pose3d **")
+    # ur_fall("inference_result_pose3d", "stat_result/pose3d")
+    le2i("inference_result_pose3d", "stat_result/pose3d")
+
+    print("** PlusPlus **")
+    # ur_fall("inference_result_plusplus", "stat_result/plusplus")
+    le2i("inference_result_plusplus", "stat_result/plusplus")
+
+if __name__ == "__main__":
+    main()
+
+
 
 # def multicam():
 #     '''
@@ -206,47 +265,3 @@ def get_sequence(ipt_list: list) -> list:
 #                         print('TRUE POSITIVE')
 #                         drop_interval.append(section)
 #                         return
-
-
-
-
-
-def ur_fall():
-    result = ModelResult()
-
-    file = open(UR_FALL_INFERENCE)
-    inference_result = json.load(file)
-    file.close()
-
-    for video in inference_result['fall']:
-        for id in video:
-            if 1 in video[id]:
-                # Fall in the video and the model output as yes
-                result.add_tp(id)
-            else:
-                # Fall in the video and the model output as no
-                result.add_fn(id)
-
-    for video in inference_result['adl']:
-        for id in video:
-            if 1 in video[id]:
-                # Fall not in the video and the model output as yes
-                result.add_fp(id)
-            else:
-                # Fall not in the video and the model output as no
-                result.add_tn(id)
-
-
-    stat_data = result.get_dict()
-    print(stat_data["score"])
-    with open(f"{OUTPUTDIR}/UR_FALL_EVAL.json", "w") as outfile:
-        json.dump(stat_data, outfile)
-
-
-def main():
-    ur_fall()
-    le2i()
-
-
-if __name__ == "__main__":
-    main()
