@@ -1,5 +1,0 @@
-Hi, In the past month, I was trying understand the frame work provided by OpenMMLab
-
-In total I use four skeleton-based recognition model pretrained with NTU60_XSub_2D, and evaluate the result using UR Fall dataset (130 videos) and Le2i dataset (100 videos)
-
-Here is the result:
