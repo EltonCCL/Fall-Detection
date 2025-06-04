@@ -5,6 +5,20 @@
 
 This project, undertaken as part of an Undergraduate Research Opportunity Program (UROP), addresses the critical need for reliable fall detection systems, particularly for ensuring the safety and well-being of elderly individuals. The work involves research and development of an intelligent system that utilizes skeleton-based action recognition models for medical diagnosis applications, specifically fall detection. The pipeline for this fall detection model is developed using the Python framework provided by OpenMMLab.
 
+## Directory
+Here's an overview of the file and directory structure of the `Fall-Detection` repository:
+
+*   **`evaluation.py`**: A Python script dedicated to evaluating the performance and accuracy of the fall detection models implemented in this project.
+*   **`fall_detector.py`**: The core Python script that implements the primary logic for the fall detection system.
+*   **`file_convertor.py`**: A Python utility script for converting file formats, likely used for data preprocessing or managing output data.
+*   **`mmlab/`**: This directory integrates or utilizes components from the MMLab Open Source Computer Vision projects (e.g., MMPose, MMDetection), containing relevant code, configurations, or models.
+*   **`stat_result/`**: Contains statistical analyses and aggregated results derived from the various experiments and model evaluations conducted.
+*   **`testing.py`**: A Python script designed for executing tests on different modules or functionalities of the fall detection system to ensure correctness and robustness.
+*   **`tools/`**: A collection of utility scripts and supplementary tools that support the development, data processing, or analysis workflows of the project.
+
+### Sample Usage
+`python fall_detector.py --video path_to_video.mp4`
+
 ## Methodology
 
 The fall detection process is implemented as a two-part pipeline: pose estimation and action recognition.
