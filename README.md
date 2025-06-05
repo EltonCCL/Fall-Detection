@@ -9,6 +9,7 @@ This project, undertaken as part of an Undergraduate Research Opportunity Progra
   <img src="normal.gif" width="400px" alt="Normal Example"/>
   <img src="fall.gif" width="400px" alt="Fall Example"/>
 </p>
+
 ## Directory
 Here's an overview of the file and directory structure of the `Fall-Detection` repository:
 
