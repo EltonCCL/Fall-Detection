@@ -5,6 +5,10 @@
 
 This project, undertaken as part of an Undergraduate Research Opportunity Program (UROP), addresses the critical need for reliable fall detection systems, particularly for ensuring the safety and well-being of elderly individuals. The work involves research and development of an intelligent system that utilizes skeleton-based action recognition models for medical diagnosis applications, specifically fall detection. The pipeline for this fall detection model is developed using the Python framework provided by OpenMMLab.
 
+<p align="center">
+  <img src="normal.gif" width="400px" alt="Normal Example"/>
+  <img src="fall.gif" width="400px" alt="Fall Example"/>
+</p>
 ## Directory
 Here's an overview of the file and directory structure of the `Fall-Detection` repository:
 
